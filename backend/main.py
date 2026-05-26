@@ -28,10 +28,12 @@ class LikeDatabase:
 
 db = LikeDatabase()
 
+# API to get likes
 @app.get("/api/likes")
 def get_likes():
     return {"likes": db.get_count()}
 
+#API to post likes
 @app.post("/api/likes")
 def add_like():
     return {"likes": db.increment()}
