@@ -1,0 +1,49 @@
+name: CI/CD Microservice Build Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-ship:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Application Code
+      uses: actions/checkout@v4
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and Push Backend Image
+      run: |
+        cd backend
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/microservice-upvote-backend:${{ github.sha }} .
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/microservice-upvote-backend:${{ github.sha }}
+
+    - name: Build and Push Frontend Image
+      run: |
+        cd ../frontend
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/microservice-upvote-frontend:${{ github.sha }} .
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/microservice-upvote-frontend:${{ github.sha }}
+
+    - name: Commit New Tags to Infrastructure Repo
+      env:
+        GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+      run: |
+        git config --global user.email "github-actions@github.com"
+        git config --global user.name "GitHub Actions Automation"
+        
+        # Clone the tracking infrastructure repository securely using the secret token
+        git clone https://${{ secrets.GITOPS_TOKEN }}@github.com/${{ github.repository_owner }}/engagement-infra.git
+        cd engagement-infra/k8s
+        
+        # Use sed to update the target tags with the current Git commit hash
+        sed -i 's|image: .*microservice-upvote-backend:.*|image: '${{ secrets.DOCKERHUB_USERNAME }}'/microservice-upvote-backend:'${{ github.sha }}'|g' platform-tier.yaml
+        sed -i 's|image: .*microservice-upvote-frontend:.*|image: '${{ secrets.DOCKERHUB_USERNAME }}'/microservice-upvote-frontend:'${{ github.sha }}'|g' platform-tier.yaml
+        
+        git add platform-tier.yaml
+        git commit -m "automation: dynamically upgraded microservice-upvote-app containers to hash version ${{ github.sha }}"
+        git push origin main
